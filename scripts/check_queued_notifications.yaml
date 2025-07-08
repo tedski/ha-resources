@@ -1,0 +1,50 @@
+alias: Check Queued Notifications
+fields:
+  target_person:
+    selector:
+     entity: 
+      domain: person
+    name: Target Person
+    description: The target person for the notification.
+    required: true
+variables:
+  queue: "{{ 'todo.queued_notifications_' + state_attr(target_person, 'friendly_name') | slugify }}"
+sequence:
+  - if:
+      - condition: template
+        value_template: "{{ (states(queue) | float) > 0 }}"
+    then:
+      - service: todo.get_items
+        target:
+          entity_id: "{{ queue }}"
+        data:
+          status: needs_action
+        response_variable: result
+      - variables:
+          remaining: |-
+            {%- set ns = namespace(count=1) %}
+            {%- for i in result[queue]["items"] %}
+              {%- if now() <= as_datetime(i.due) %}
+                {{ ns.count }}. {{ i.summary }}.
+                {%- set ns.count = ns.count + 1 %}
+              {%- endif %}
+            {%- endfor %}
+      - if:
+          - condition: template
+            value_template: "{{ remaining != '' }}"
+        then:
+          - service: script.geofenced_notify
+            data:
+              message: |
+                While you were away... 
+                {{ remaining }}
+              do_not_queue: true
+              target_person: "{{ target_person }}"
+          - service: todo.remove_item
+            data:
+              item: >-
+                {{ result[queue]["items"] | map(attribute='summary') | list }}
+            target:
+              entity_id: "{{ queue }}"
+mode: single
+icon: mdi:message-arrow-right
