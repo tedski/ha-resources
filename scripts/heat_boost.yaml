@@ -1,0 +1,86 @@
+alias: Emergency Heat Boost with Temperature Increase
+description: >-
+  Temporarily enables Emergency Heat and increases temperature for Lennox S30
+  systems, then restores previous settings.
+fields:
+  thermostat:
+    name: Thermostat Entity
+    description: The climate entity for controlling temperature
+    selector:
+      entity: null
+    example: climate.zone_1_bedrooms
+    required: true
+variables:
+  hvac_select: "{{ thermostat.replace('climate.', 'select.') + '_hvac_mode' }}"
+  original_hvac_mode: "{{ states(thermostat) }}"
+  current_temp: "{{ state_attr(thermostat, 'current_temperature') }}"
+  original_preset: "{{ state_attr(thermostat, 'preset_mode') }}"
+  original_temp: "{{ state_attr(thermostat, 'temperature') }}"
+  original_temp_high: "{{ state_attr(thermostat, 'target_temp_high') }}"
+  original_temp_low: "{{ state_attr(thermostat, 'target_temp_low') }}"
+sequence:
+  - action: select.select_option
+    target:
+      entity_id: "{{ hvac_select }}"
+    data:
+      option: emergency heat
+  - delay:
+      hours: 0
+      minutes: 0
+      seconds: 1
+      milliseconds: 0
+  - action: climate.set_temperature
+    target:
+      entity_id: "{{ thermostat }}"
+    data:
+      temperature: "{{ current_temp + 5 }}"
+  - delay:
+      hours: 0
+      minutes: 30
+      seconds: 0
+      milliseconds: 0
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ states(hvac_select) == 'emergency heat' }}"
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ original_preset != 'none' }}"
+                sequence:
+                  - action: climate.set_preset_mode
+                    target:
+                      entity_id: "{{ thermostat }}"
+                    data:
+                      preset_mode: "{{ original_preset }}"
+            default:
+              - action: select.select_option
+                target:
+                  entity_id: "{{ hvac_select }}"
+                data:
+                  option: "{{ original_hvac_mode }}"
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ original_temp is not none }}"
+                    sequence:
+                      - action: climate.set_temperature
+                        target:
+                          entity_id: "{{ thermostat }}"
+                        data:
+                          temperature: "{{ original_temp }}"
+                  - conditions:
+                      - condition: template
+                        value_template: >-
+                          {{ original_temp_high is not none and
+                          original_temp_low is not none }}
+                    sequence:
+                      - action: climate.set_temperature
+                        target:
+                          entity_id: "{{ thermostat }}"
+                        data:
+                          target_temp_high: "{{ original_temp_high }}"
+                          target_temp_low: "{{ original_temp_low }}"
+icon: mdi:heating-coil
+mode: single
